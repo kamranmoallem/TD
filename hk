@@ -1,0 +1,503 @@
+<?php
+function hk_chain()
+{
+	global $db;
+	class ReadingList
+	{
+		protected $stack;
+		protected $limit;
+		
+		public function __construct($limit = 100, $initial = array(array('node', 'route', 'dept', 'amount', 'cd')))
+		{
+			$this->stack = array();
+			$this->limit = $limit;
+		}
+
+		public function push($item)
+		{
+			if (count($this->stack) < $this->limit)
+			{
+				array_unshift($this->stack, $item);
+			}
+			else
+			{
+				throw new RunTimeException('Stack is full!'); 
+			}
+		}
+
+		public function pop()
+		{
+			if ($this->isEmpty())
+			{
+				throw new RunTimeException('Stack is empty!');
+			}
+			else
+			{
+				return array_shift($this->stack);
+			}
+		}
+
+		public function top()
+		{
+			return current($this->stack);
+		}
+
+		public function isEmpty()
+		{
+			return empty($this->stack);
+		}
+	}
+
+	$big_chain = array();
+	$to_debtor_chain = array();
+	$to_creditor_chain = array();
+
+	$myBooks = new ReadingList();
+	echo "To debtor: <br>";
+	$to_debtor_chain = to_debtor($db, $myBooks);
+
+	$myBooks1 = new ReadingList();
+	echo "<br><br><br><br>To creditor: <br>";
+	$to_creditor_chain = to_creditor($db, $myBooks1);
+
+
+
+	echo "<br><br><br>";
+	print_r($to_debtor_chain);
+	echo "<br><br><br>";
+	print_r($to_creditor_chain);
+	echo "<br><br><br>";
+
+
+	include(root . '/admin/' . atemplate . '/modules/hk/hk_chain.phtml');
+}
+
+function to_debtor($db, ReadingList $myBooks)
+{
+	$arr1 = array();
+
+	$chain = array();
+
+	$clients = $db->get_results("SELECT * FROM client ");	//WHERE id=\"5\"
+	// $db->debug();
+	// print_r($clients);
+
+	foreach ($clients as $key => $client)
+	{
+		$arr1['node'] = $client->id;
+		$arr1['route'] = array('0');	//$arr1['route'] = '0';
+		$arr1['dept'] = 0;
+		$arr1['amount'] = 0;
+		$arr1['cd'] = 'd';
+		$myBooks->push($arr1);
+		// print_r($myBooks);
+
+		$chain[$client->id] = array();
+
+		$repeaty_node = array();
+		// array_push($repeaty_node, $arr1);	//array_push($repeaty_node, $arr1['node']);
+		array_push($repeaty_node, $arr1['node']);
+
+		echo "<br><br> _____________________________________جدید جدید" . $client->id . "<br>";
+		$dept = 0;
+		while (1)
+		{
+			// $dept++;
+			$top = $myBooks->top();
+			$top_node = $top['node'];
+			$top_node_dept = $top['dept'];
+			$top_node_route = $top['route'];
+			array_push($top_node_route, $top_node);
+			// $masir = $top_node_route;
+			$top_node_amount = $top['amount'];
+			$top_node_cd = $top['cd'];
+			// print_r($top_node);
+			echo "<br>";
+			// print_r($top);
+			// print_r($myBooks);
+			if($myBooks->isEmpty() == true)
+			{
+				echo "<br>";
+				echo "خروج از وایل";
+				break;
+				// echo "<br>";
+				// print_r($myBooks);
+				// echo "<br>";
+			}
+			$myBooks->pop();
+
+			echo "<br>This is i: " . $top_node . "<br>";
+			// print_r($top_node_route);
+
+
+			$temp = $db->get_results("SELECT * FROM cd_financial WHERE creditor=\"$top_node\" ");//AND status=\"1\"
+			// $db->debug();
+			$khorooj_ba_dor = false;
+			if($temp)
+			{
+				$temp_sum = array();	//node, dept, cd
+
+				foreach ($temp as $key => $value)
+				{
+					// echo "<br>";
+					// echo "avali: " . $key . "<br>";
+					$k = false;
+					foreach ($temp_sum as $key1 => $temp_sum_value)
+					{
+						// $k = array_search($value->debtor, $temp_sum_value);	//$k = array_search($value->debtor, array_column($temp_sum, 'node'));
+						if($value->debtor == $temp_sum_value['debtor'])
+						{
+							$k = true;
+							// echo "k: " . $key1 . ": " . $value->debtor . " -> " . $value->cd_id . "  -> " . $k . "<br>";
+							break;
+						}
+						// echo "k: " . $k . "<br>";
+						// echo "k: " . $key1 . ": " . $value->debtor . " -> " . $value->cd_id . "  -> " . $k . "<br>";
+						// if($k == 'debtor')
+							// break;
+					}
+					// echo "s     : " . $k . "<br>";
+					if($k == false)
+					{
+						// echo "add<br>";
+						// echo "<br>K: " . $k;
+						$arr_temp['cd_id'] = $value->cd_id;
+						$arr_temp['creditor'] = $value->creditor;
+						$arr_temp['debtor'] = $value->debtor;
+						$arr_temp['amount'] = $value->amount;
+						$arr_temp['requester'] = $value->requester;
+						$arr_temp['time'] = $value->time;
+						$arr_temp['verify_time'] = $value->verify_time;
+						$arr_temp['status'] = $value->status;
+						array_push($temp_sum, $arr_temp);
+						// print_r($temp_sum);
+						// echo "<br><br><br>";
+					}
+					else
+					{
+						// echo "key1: " . $key1 . "<br>" . $value->debtor;
+						// echo "<br><br>";
+						foreach ($temp_sum as $key2 => $value2)
+						{
+							if($value2['debtor'] == $value->debtor)
+								$temp_sum[$key2]['amount'] += $value->amount;
+						}
+					}
+				}
+						// print_r($temp_sum);
+						// echo count($temp_sum);
+						// echo "<br>";
+
+				foreach ($temp_sum as $key => $value)
+				{
+					// print_r($value);
+					// echo "<br>";
+					// $check_repeaty_node = array_search($value['debtor'], $repeaty_node);
+					$check_repeaty_node = false;
+					foreach ($repeaty_node as $key1 => $repeaty_node_value)
+					{
+						if($value['debtor'] == $repeaty_node_value)
+							$check_repeaty_node = true;
+					}
+					// echo "<br><br>repeaty: ";
+					// print_r($check_repeaty_node);
+					// echo "    debtor: " . $value['debtor'] . "<br>";
+					if(!$check_repeaty_node)
+					{
+						// print_r($repeaty_node);
+						// $myBooks->pop();
+						// continue;
+
+						array_push($repeaty_node, $value['debtor']);
+						$arr1['node'] = $value['debtor'];
+						$arr1['route'] = $top_node_route;
+						$arr1['dept'] = $top_node_dept + 1;
+						$arr1['amount'] = $value['amount'];
+						$arr1['cd'] = 'd';
+						$myBooks->push($arr1);
+					}
+					else
+					{
+						$tc = array();
+						$tc['route'] = $top_node_route;
+						$tc['amount'] = $top_node_amount;
+						$tc['dept'] = $top_node_dept;
+						$tc['cd'] = $top_node_cd;
+
+						array_push($chain[$client->id], $tc);
+						// print_r($top_node_route);
+						echo "<br>";
+						echo "دور دور دور";
+						if($myBooks->isEmpty() == true)
+						{
+							echo "<br>";
+							echo "دور و خروج";
+							$khorooj_ba_dor = true;
+							// break;
+							// echo "<br>";
+							// print_r($myBooks);
+							// echo "<br>";
+						}
+						// echo "<br>";
+						// print_r($myBooks);
+						// echo "<br>";
+						// continue;
+					}
+					// print_r($temp_sum);
+				}
+					// print_r($myBooks);
+					// echo "<br>";
+
+				// if($khorooj_ba_dor)
+				// {
+				// 	$khorooj_ba_dor = false;
+				// 	echo "<br>";
+				// 	echo "خروج با دور";
+				// 	echo "<br>";
+				// 	break;
+				// }
+			}
+			else
+			{
+				// print_r($top_node_route);
+
+				$tc = array();
+				$tc['route'] = $top_node_route;
+				$tc['amount'] = $top_node_amount;
+				$tc['dept'] = $top_node_dept;
+				$tc['cd'] = $top_node_cd;
+
+				array_push($chain[$client->id], $tc);
+				if($myBooks->isEmpty() == true)
+				{
+					echo "<br>";
+					echo "خالی خالی خالی";
+					break;
+					// echo "<br>";
+					// print_r($myBooks);
+					// echo "<br>";
+				}
+				// echo "<br>";
+				// print_r($myBooks);
+				// echo "<br>";
+				continue;
+			}
+		}
+	}
+		echo "<br><br><br>";
+		// print_r($chain);
+		echo "<br><br><br>";
+		return $chain;
+ 
+	// print_r($myBooks);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+function to_creditor($db, ReadingList $myBooks)
+{
+	$arr1 = array();
+	// print_r($myBooks);
+
+	$arr = array(array());
+	$arr[0]['pre'] = 'foo';
+	$arr[0]['next'] = 'foo1';
+	$arr[1]['pre'] = 'foo2';
+	$arr[1]['next'] = 'foo3';
+
+	// print_r($arr);
+
+	$chain = array(array());
+	$temp_chain = array();
+
+	$clients = $db->get_results("SELECT * FROM client");
+	// $db->debug();
+
+	foreach ($clients as $key => $client)
+	{
+		$arr1['node'] = $client->id;
+		$arr1['route'] = array('0');	//$arr1['route'] = '0';
+		$arr1['dept'] = 0;
+		$arr1['amount'] = 0;
+		$arr1['cd'] = 'd';
+		$myBooks->push($arr1);
+		// print_r($myBooks);
+
+		$chain[$client->id] = array();
+
+		$repeaty_node = array();
+		// array_push($repeaty_node, $arr1);	//array_push($repeaty_node, $arr1['node']);
+		array_push($repeaty_node, $arr1['node']);
+
+		echo "<br><br> _____________________________________جدید جدید" . $client->id . "<br>";
+		$dept = 0;
+		while (1)
+		{
+			// $dept++;
+			$top = $myBooks->top();
+			$top_node = $top['node'];
+			$top_node_dept = $top['dept'];
+			$top_node_route = $top['route'];
+			array_push($top_node_route, $top_node);
+			$masir = $top_node_route;
+			$masir = $top_node_route;
+			$top_node_amount = $top['amount'];
+			$top_node_cd = $top['cd'];
+			// print_r($top_node);
+			echo "<br>";
+			// print_r($top);
+			// print_r($myBooks);
+			if($myBooks->isEmpty() == true)
+			{
+				echo "<br>";
+				echo "خروج از وایل";
+				break;
+				// echo "<br>";
+				// print_r($myBooks);
+				// echo "<br>";
+			}
+			$myBooks->pop();
+
+			echo "<br>This is i: " . $top_node . "<br>";
+			// print_r($top_node_route);
+
+			array_push($temp_chain, $top_node);
+
+			$temp = $db->get_results("SELECT * FROM cd_financial WHERE debtor=\"$top_node\" ");//AND status=\"1\"
+			// $db->debug();
+			if($temp)
+			{
+				$temp_sum = array();	//node, dept, cd
+
+				foreach ($temp as $key => $value)
+				{
+					// echo "<br>";
+					// echo "avali: " . $key . "<br>";
+					$k = false;
+					foreach ($temp_sum as $key1 => $temp_sum_value)
+					{
+						// $k = array_search($value->creditor, $temp_sum_value);	//$k = array_search($value->creditor, array_column($temp_sum, 'node'));
+						if($value->creditor == $temp_sum_value['creditor'])
+						{
+							$k = true;
+							// echo "k: " . $key1 . ": " . $value->creditor . " -> " . $value->cd_id . "  -> " . $k . "<br>";
+							break;
+						}
+						// echo "k: " . $k . "<br>";
+						// echo "k: " . $key1 . ": " . $value->creditor . " -> " . $value->cd_id . "  -> " . $k . "<br>";
+						// if($k == 'creditor')
+							// break;
+					}
+					// echo "s     : " . $k . "<br>";
+					if($k == false)
+					{
+						// echo "add<br>";
+						// echo "خالی خالی خالی" . "<br>";
+
+						// echo "<br>K: " . $k;
+						$arr_temp['cd_id'] = $value->cd_id;
+						$arr_temp['creditor'] = $value->creditor;
+						$arr_temp['debtor'] = $value->debtor;
+						$arr_temp['amount'] = $value->amount;
+						$arr_temp['requester'] = $value->requester;
+						$arr_temp['time'] = $value->time;
+						$arr_temp['verify_time'] = $value->verify_time;
+						$arr_temp['status'] = $value->status;
+						array_push($temp_sum, $arr_temp);
+						// print_r($temp_sum);
+						// echo "<br><br><br>";
+					}
+					else
+					{
+						foreach ($temp_sum as $key2 => $value2)
+						{
+							if($value2['creditor'] == $value->creditor)
+								$temp_sum[$key2]['amount'] += $value->amount;
+						}
+					}
+				}
+						// print_r($temp_sum);
+						// echo count($temp_sum);
+						// echo "<br>";
+
+				foreach ($temp_sum as $key => $value)
+				{
+					// print_r($value);
+					// echo "<br>";
+					// $check_repeaty_node = array_search($value['creditor'], $repeaty_node);
+					$check_repeaty_node = false;
+					foreach ($repeaty_node as $key1 => $repeaty_node_value)
+					{
+						if($value['creditor'] == $repeaty_node_value)
+							$check_repeaty_node = true;
+					}
+					// echo "<br><br>repeaty: ";
+					// print_r($check_repeaty_node);
+					// echo "    creditor: " . $value['creditor'] . "<br>";
+					if(!$check_repeaty_node)
+					{
+						array_push($repeaty_node, $value['creditor']);
+						$arr1['node'] = $value['creditor'];
+						$arr1['route'] = $top_node_route;
+						$arr1['dept'] = $top_node_dept + 1;
+						$arr1['amount'] = $value['amount'];
+						$arr1['cd'] = 'c';
+						$myBooks->push($arr1);
+					}
+					else
+					{
+						$tc = array();
+						$tc['route'] = $top_node_route;
+						$tc['amount'] = $top_node_amount;
+						$tc['dept'] = $top_node_dept;
+						$tc['cd'] = $top_node_cd;
+
+						array_push($chain[$client->id], $tc);
+						// print_r($top_node_route);
+						echo "<br>";
+						echo "دور دور دور";
+						if($myBooks->isEmpty() == true)
+						{
+							echo "<br>";
+							echo "دور و خروج";
+							$khorooj_ba_dor = true;
+							// break;
+							// echo "<br>";
+							// print_r($myBooks);
+							// echo "<br>";
+						}
+					}
+					// print_r($temp_sum);
+				}
+					// print_r($myBooks);
+					// echo "<br>";
+			}
+			else
+			{
+				$tc = array();
+				$tc['route'] = $top_node_route;
+				$tc['amount'] = $top_node_amount;
+				$tc['dept'] = $top_node_dept;
+				$tc['cd'] = $top_node_cd;
+
+				array_push($chain[$client->id], $tc);
+				if($myBooks->isEmpty() == true)
+				{
+					echo "<br>";
+					echo "خالی خالی خالی";
+					break;
+					// echo "<br>";
+					// print_r($myBooks);
+					// echo "<br>";
+				}
+				continue;
+			}
+		}
+	}
+	echo "<br><br><br>";
+	// print_r($chain);
+	echo "<br><br><br>";
+	return $chain;
+
+	// print_r($myBooks);
+}
